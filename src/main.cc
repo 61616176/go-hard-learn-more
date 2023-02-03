@@ -923,8 +923,9 @@ static void handle(Pig& pig, unsigned& swine, unsigned& pending_privileges)
     case Analyzer::State::NEW:
         pig.start();
         break;
-
+        
     case Analyzer::State::INITIALIZED:
+    //如果pig没有权限且需要权限，则广播命令；否则将命令加到pig的命令队列中
         if (pig.requires_privileged_start && pending_privileges &&
             !Snort::has_dropped_privileges())
         {
@@ -951,7 +952,7 @@ static void handle(Pig& pig, unsigned& swine, unsigned& pending_privileges)
 
     case Analyzer::State::STARTED:
         if (!pig.requires_privileged_start && pending_privileges &&
-            !Snort::has_dropped_privileges())
+            !Snort::has_dropped_privileges())//requires_privileged_start为false；pending_pribileges>0;dropped_privileges为false
         {
             if (!pig.awaiting_privilege_change)
             {
@@ -964,7 +965,7 @@ static void handle(Pig& pig, unsigned& swine, unsigned& pending_privileges)
             if (!Snort::drop_privileges())
                 FatalError("Failed to drop privileges!\n");
 
-            Snort::do_pidfile();
+            Snort::do_pidfile();//创建一个pidfile
             main_broadcast_command(new ACRun(paused));
         }
         else
@@ -989,7 +990,7 @@ static void main_loop()
     unsigned swine = 0, pending_privileges = 0;
 
     if (SnortConfig::get_conf()->change_privileges())
-        pending_privileges = max_pigs;
+        pending_privileges = max_pigs;//给每个pig赋权
 
     // Preemptively prep all pigs in live traffic mode
     if (!SnortConfig::get_conf()->read_mode())
@@ -997,7 +998,7 @@ static void main_loop()
         for (unsigned i = 0; i < max_pigs; i++)
         {
             if (pigs[i].prep(SFDAQ::get_input_spec(SnortConfig::get_conf()->daq_config, i)))
-                swine++;
+                swine++;//活猪数
         }
     }
 

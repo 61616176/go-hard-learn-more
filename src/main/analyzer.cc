@@ -77,7 +77,7 @@
 using namespace snort;
 using namespace std;
 
-static MainHook_f main_hook = snort_ignore;
+static MainHook_f main_hook = snort_ignore;//A function’s name can also be used to get functions’ address.
 
 THREAD_LOCAL ProfileStats daqPerfStats;
 static THREAD_LOCAL Analyzer* local_analyzer = nullptr;
@@ -106,7 +106,7 @@ public:
         assert(empty());
     }
 
-    void put(DAQ_Msg_h msg)
+    void put(DAQ_Msg_h msg)//把任务和执行任务的时间一起放到queue中
     {
         struct timeval now, next_try;
         packet_gettimeofday(&now);
@@ -170,6 +170,7 @@ static void process_daq_sof_eof_msg(DAQ_Msg_h msg, DAQ_Verdict& verdict)
     const char* key;
 
     select_default_policy(*stats, SnortConfig::get_conf());
+    
     if (daq_msg_get_type(msg) == DAQ_MSG_TYPE_EOF)
     {
         packet_time_update(&stats->eof_timestamp);
@@ -726,14 +727,14 @@ Analyzer::~Analyzer()
     delete retry_queue;
 }
 
-void Analyzer::operator()(Swapper* ps, uint16_t run_num)
+void Analyzer::operator()(Swapper* ps, uint16_t run_num)//创建新线程调用函数的入口
 {
     oops_handler->tinit();
 
     set_thread_type(STHREAD_TYPE_PACKET);
     set_instance_id(id);
     set_run_num(run_num);
-    local_analyzer = this;
+    local_analyzer = this;//在C++ 中，每一个对象都能通过this 指针来访问自己的地址。this 指针是所有成员函数的隐含参数。因此，在成员函数内部，它可以用来指向调用对象。
 
     ps->apply(*this);
 
@@ -797,7 +798,7 @@ bool Analyzer::handle_command()
     if ( ac->need_update_reload_id() )
         SnortConfig::update_thread_reload_id();
 
-    if ( ac->execute(*this, &ac_state) )
+    if ( ac->execute(*this, &ac_state) )//由实际ac指向的子类来断定execute为哪个子类的方法
         add_command_to_completed_queue(ac);
     else
         add_command_to_uncompleted_queue(ac, ac_state);

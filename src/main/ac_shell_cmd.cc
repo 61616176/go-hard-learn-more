@@ -31,7 +31,7 @@ ACShellCmd::ACShellCmd(ControlConn* conn, AnalyzerCommand* ac) : AnalyzerCommand
 {
     assert(ac);
 
-    if (ctrlcon)
+    if (ctrlcon)//ACShellCmd从AnalyzerCommand继承来的ctrlcon
         ctrlcon->block();
 }
 
