@@ -80,6 +80,7 @@ runDT
        * subclasses.
        */
       virtual void StartApplication (void);
+    --> device_Master.cc
     deviceMaster来重载
     DeviceMaster::StartApplication (void)
     {     
@@ -123,7 +124,7 @@ runDT
     Ipv4Address localAddress;
     
     startApplication功能很简单，读取ins.json中的指令（这是在managy.py中生成的），存入ins_list，再调用netManager.sendInsList()发送指令。
-    
+    --> net-manager.cc
     * 批量向下位机发送指令
     * \param ins_list The list of instructions to send.
     * \param onReceive Callback function called when receives a reply from slaves.
@@ -149,7 +150,54 @@ runDT
             }
         }
     } 
+    netManager一些变量
+    std::map<std::pair<std::string, uint16_t>, Ptr<Socket>> socks;
+    std::queue<std::pair<InsInfo, Ptr<Socket>>> packs;
     遍历ins_list每一个指令，查看指令目的地是否已经在netManager的socks中存在，若存在，调用scheduleSend（）；不存在，创建new_sock，绑定，病插入sock是，调用scheduleSend（）。
+    关于socket的相关函数功能，先不予讨论。着重关注指令发送即scheduleSend（）。
+    void
+    NetManager::scheduleSend (InsInfo ins, Ptr<Socket> socket, Time ts)
+    {
+       ...
+        packs.push(std::pair<InsInfo, Ptr<Socket>>(ins, socket));
+        Simulator::Schedule (ts, &NetManager::send, this);
+    }
+    Simulator::Schedule（ts, &NetManager::send, this）大意计划一个规定时间ts之后执行的一个事件--send（），至于怎么完成，比如创建一个链表，把event放进去我们暂且不管。先看send（）。
+    send（）首先是从pack队列中拿到队头，创建发送的packet和管道
+    pack = packs.front();
+    packs.pop();
+    Ptr<Socket> socket = pack.second;
+    InsInfo ins = pack.first;
+    Ptr<Packet> packet = Create<Packet> ((uint8_t*)(ins.load.data()), ins.load.length());
+    socket->Connect(InetSocketAddress(Ipv4Address(ins.dst.data()), ins.dport));
+    创建好后调用
+    socket->Send(packet); 
+    而后获得socket本地地址和与socket链接的地址--peerAddress，判断peerAddress的类型。这其中出现基类与子类的调用关系，记录一下。
+    Address localAddress;
+    Address peerAddress;
+    socket->GetSockName(localAddress); 
+    socket->GetPeerName(peerAddress);
+    if (Ipv4Address::IsMatchingType (peerAddress))
+        ...
+    else if (Ipv6Address::IsMatchingType (peerAddress))
+        ...
+        
+    -->socket.h
+    /**
+    * \brief Get the peer address of a connected socket.
+    * \param address the address this socket is connected to.
+    * \returns 0 if success, -1 otherwise
+    */
+    virtual int GetPeerName (Address &address) const = 0;
+    
+    --> address.cc
+    bool 
+    Address::IsMatchingType (uint8_t type) const
+    {       
+      NS_LOG_FUNCTION (this << static_cast<uint32_t> (type));
+      return m_type == type;
+    }                       
+    可以得知，Address是Ipv4Address、Ipv6Address的基类，子类可以调用基类的方法；socket是Ipv4RawSocketImpl、Ipv6RawSocketImpl的基类，而实际socket->GetPeerName（）是一个纯虚函数，必须被子类实现。基类可以指向子类，所以socket实际上是Ipv4RawSocketImpl、Ipv6RawSocketImpl或者其他Socket的子类之一，socket->GetPeerName（）实际上等价于（比如：）Ipv4RawSocketImpl->GetPeerName().
     
 -----
     3.application子类deviceSlave的启动
