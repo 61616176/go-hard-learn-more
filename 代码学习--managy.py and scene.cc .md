@@ -133,23 +133,15 @@ runDT
     {
         NS_LOG_FUNCTION (this);
         for (std::vector<InsInfo>::const_iterator iter = ins_list.begin();iter != ins_list.end(); iter++){
-            std::pair<std::string, uint16_t> dst;
-            dst.first = iter->dst;
-            dst.second = iter->dport;
-
+            ...
             std::map<std::pair<std::string, uint16_t>, Ptr<Socket>>::iterator socket = socks.find(dst);
             if (socket == socks.end()){
                 TypeId tid = TypeId::LookupByName("ns3::TcpSocketFactory");
                 Ptr<Socket> new_sock = Socket::CreateSocket(node, tid);
                 //Bind the socket
-                if (new_sock->Bind() == -1)
-                {
-                    NS_FATAL_ERROR("Failed to bind socket");
-                }
+                   ...
                 //Ptr<Socket> new_sock = this->openConnection(node, iter->dst, iter->dport);
-                socks.insert(std::pair<std::pair<std::string, uint16_t>, Ptr<Socket>>(dst, new_sock));
-                new_sock->SetAllowBroadcast (true);
-                new_sock->SetRecvCallback (onReceive);
+                    ...
                 this->scheduleSend(*iter, new_sock, iter->ts);
             }
             else{
@@ -157,7 +149,7 @@ runDT
             }
         }
     } 
-
+    遍历ins_list每一个指令，查看指令目的地是否已经在netManager的socks中存在，若存在，调用scheduleSend（）；不存在，创建new_sock，绑定，病插入sock是，调用scheduleSend（）。
     
 -----
     3.application子类deviceSlave的启动
