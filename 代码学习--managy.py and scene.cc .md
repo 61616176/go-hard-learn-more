@@ -124,6 +124,40 @@ runDT
     
     startApplication功能很简单，读取ins.json中的指令（这是在managy.py中生成的），存入ins_list，再调用netManager.sendInsList()发送指令。
     
+    * 批量向下位机发送指令
+    * \param ins_list The list of instructions to send.
+    * \param onReceive Callback function called when receives a reply from slaves.
+    */
+    void
+    NetManager::sendInsList (Ptr<Node> node, std::vector<InsInfo> ins_list, Callback<void, Ptr<Socket>> onReceive)
+    {
+        NS_LOG_FUNCTION (this);
+        for (std::vector<InsInfo>::const_iterator iter = ins_list.begin();iter != ins_list.end(); iter++){
+            std::pair<std::string, uint16_t> dst;
+            dst.first = iter->dst;
+            dst.second = iter->dport;
+
+            std::map<std::pair<std::string, uint16_t>, Ptr<Socket>>::iterator socket = socks.find(dst);
+            if (socket == socks.end()){
+                TypeId tid = TypeId::LookupByName("ns3::TcpSocketFactory");
+                Ptr<Socket> new_sock = Socket::CreateSocket(node, tid);
+                //Bind the socket
+                if (new_sock->Bind() == -1)
+                {
+                    NS_FATAL_ERROR("Failed to bind socket");
+                }
+                //Ptr<Socket> new_sock = this->openConnection(node, iter->dst, iter->dport);
+                socks.insert(std::pair<std::pair<std::string, uint16_t>, Ptr<Socket>>(dst, new_sock));
+                new_sock->SetAllowBroadcast (true);
+                new_sock->SetRecvCallback (onReceive);
+                this->scheduleSend(*iter, new_sock, iter->ts);
+            }
+            else{
+                this->scheduleSend(*iter, socket->second, iter->ts);
+            }
+        }
+    } 
+
     
 -----
     3.application子类deviceSlave的启动
