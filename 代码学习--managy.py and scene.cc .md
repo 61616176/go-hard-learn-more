@@ -62,6 +62,7 @@ runDT
     master.Install (Nodes.Get (i));将返回一个applicationcontainer（app），同时node拥有一个指向DeviceMaster的app，addapplication将完成对app的初始化
 ------
     2.application子类deviceMaster的启动
+    1)
     void 
     ApplicationContainer::Start (Time start)
     {
@@ -124,6 +125,7 @@ runDT
     Ipv4Address localAddress;
     
     startApplication功能很简单，读取ins.json中的指令（这是在managy.py中生成的），存入ins_list，再调用netManager.sendInsList()发送指令。
+    2)
     --> net-manager.cc
     * 批量向下位机发送指令
     * \param ins_list The list of instructions to send.
@@ -155,6 +157,7 @@ runDT
     std::queue<std::pair<InsInfo, Ptr<Socket>>> packs;
     遍历ins_list每一个指令，查看指令目的地是否已经在netManager的socks中存在，若存在，调用scheduleSend（）；不存在，创建new_sock，绑定，病插入sock是，调用scheduleSend（）。
     关于socket的相关函数功能，先不予讨论。着重关注指令发送即scheduleSend（）。
+    3)
     void
     NetManager::scheduleSend (InsInfo ins, Ptr<Socket> socket, Time ts)
     {
@@ -198,7 +201,21 @@ runDT
       return m_type == type;
     }                       
     可以得知，Address是Ipv4Address、Ipv6Address的基类，子类可以调用基类的方法；socket是Ipv4RawSocketImpl、Ipv6RawSocketImpl的基类，而实际socket->GetPeerName（）是一个纯虚函数，必须被子类实现。基类可以指向子类，所以socket实际上是Ipv4RawSocketImpl、Ipv6RawSocketImpl或者其他Socket的子类之一，socket->GetPeerName（）实际上等价于（比如：）Ipv4RawSocketImpl->GetPeerName().
+    4)回调函数接收下位机发回的信息
+    回到net.sendInsList(GetNode(), ins_list, MakeCallback(&DeviceMaster::HandleRead, this));
+    其中MakeCallback()生成一个回调函数,（本文最后有回调函数和hook函数的区别）用于处理下位机发回信息时处理。
+    -->/root/ns3/ns-allinone-3.33/ns-3.33/src/applications/model 
+    留待明日吧。。
     
+
 -----
     3.application子类deviceSlave的启动
 ```
+
+> 回调函数和hook函数的区别
+
+|回调函数|钩子函数|
+|:------|:------|
+|回调就是A调用B的方法的同时，传递给B的一个或一组函数指针（或者其他什么形式，只要能调用到A的方法就行），让B可以通知A函数调用的结果。一般来说，这个行为是A发起的，B负责执行，并将结果通过回调返回给A。|钩子的目的不太一样，我们实现B的钩子函数，目的是B在执行某个操作时会会调用这个钩子函数，用于执行我们自定义的一些行为。B通常是系统或者框架的某个模块，实现并注册钩子函数可以扩展系统的行为。钩子函数通常不是必须的，大多数情况不实现钩子函数也会过的好好的。|
+|实际上都是一个模块调用另一个模块的方法，只不过目的不同，叫法不一样。|
+    
