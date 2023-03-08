@@ -27,6 +27,8 @@ runDT
 
 ### 主要探讨主从节点的交互过程的实现
 ```c++
+   1.  涉及几个类之间的关系
+   以主节点启动为例
    case 5: //master
     {   
       ip = j["deviceInfo"][i]["ip"].dump(); 
@@ -40,7 +42,7 @@ runDT
       std::cout << "Node " << i << " is mater, ip:" << ip <<std::endl;
     }
 ------
-    1.  涉及几个类之间的关系
+    
     applicationContainer是application的容器，可以包含多个application和一些操作
     deviceMasterHelper是帮助管理节点更容易的class
     ApplicationContainer
@@ -124,7 +126,7 @@ runDT
     NetManager net;
     Ipv4Address localAddress;
     
-    startApplication功能很简单，读取ins.json中的指令（这是在managy.py中生成的），存入ins_list，再调用netManager.sendInsList()发送指令。
+    startApplication功能很简单，读取ins.json中的指令（这是在managy.py中生成的），当指令原地址是节点地址时，存入ins_list，再调用netManager.sendInsList()发送指令。
     2)
     --> net-manager.cc
     * 批量向下位机发送指令
@@ -205,13 +207,112 @@ runDT
     回到net.sendInsList(GetNode(), ins_list, MakeCallback(&DeviceMaster::HandleRead, this));
     其中MakeCallback()生成一个回调函数,（本文最后有回调函数和hook函数的区别）用于处理下位机发回信息时处理。
     -->/root/ns3/ns-allinone-3.33/ns-3.33/src/applications/model 
-    留待明日吧。。
+    void
+    DeviceMaster::HandleRead (Ptr<Socket> socket)
+    {
+      ...
+      // 从socket中读取单个数据包并检索发送方地址
+      while ((packet = socket->RecvFrom (from)))
+      {
+        // 获取套接字地址
+        socket->GetSockName (local);
+        // 如果地址与类型匹配
+        if (InetSocketAddress::IsMatchingType (from))
+        {
+          // 输出时间、client、port、size、from信息
+          ...
+        }
+        else if (Inet6SocketAddress::IsMatchingType (from))
+        {
+            ...
+        }
+        // 回调
+        m_rxTrace (packet);
+        m_rxTraceWithAddresses (packet, from, local);
+      }
+      socket->Close();
+    }
     
+    又有 --> device-master.h
+    /// Callbacks for tracing the packet Rx events
+    /// Traced Callback: received packets.
+    TracedCallback<Ptr<const Packet> > m_rxTrace;
+    /// Callbacks for tracing the packet Rx events, includes source and destination addresses
+    TracedCallback<Ptr<const Packet>, const Address &, const Address &> m_rxTraceWithAddresses;
 
+    TracedCallback是一个模板类
+    //Forward calls to a chain of Callback.
+    //This is a functor: the chain of Callbacks is invoked by calling the operator() form with the appropriate number of arguments.
+    template <typename... Ts>
+    class TracedCallback
+    {
+      public:
+        TracedCallback();
+        void ConnectWithoutContext(const CallbackBase& callback);
+        void Connect(const CallbackBase& callback, std::string path);
+        void DisconnectWithoutContext(const CallbackBase& callback);
+        void Disconnect(const CallbackBase& callback, std::string path);
+        void operator()(Ts... args) const;
+        bool IsEmpty() const;
+
+        // Uint32Callback appears to be the only one used at the moment.
+        // Feel free to add typedef's for any other POD you need.
+        typedef void (*Uint32Callback)(const uint32_t value);
+      private:
+        typedef std::list<Callback<void, Ts...>> CallbackList;
+        CallbackList m_callbackList;
+    };
+    m_rxTrace和m_rxTraceWithAddresses是编译器将按照TraceCallBack<...Ts>生成的两个独立的类声明和相应两组独立的类方法。
+    而
+    m_rxTrace (packet);
+    m_rxTraceWithAddresses (packet, from, local);
+    应该是类调用重载运算符operator（）。如前文所说，开启一个回调函数链。
+    5.回调函数触发的时机
+    这时候我们必须深入netManager.SendInsList()这个函数了
+    /**
+    * 批量向下位机发送指令
+    * \param ins_list The list of instructions to send.
+    * \param onReceive Callback function called when receives a reply from slaves.
+    */  
+    void
+    NetManager::sendInsList (Ptr<Node> node, std::vector<InsInfo> ins_list, Callback<void, Ptr<Socket>> onReceive)   
+    {     
+        ...
+                Ptr<Socket> new_sock = Socket::CreateSocket(node, tid);
+                //Bind the socket
+                if (new_sock->Bind() == -1)
+                {
+                    NS_FATAL_ERROR("Failed to bind socket");
+                }
+                //Ptr<Socket> new_sock = this->openConnection(node, iter->dst, iter->dport);
+                socks.insert(std::pair<std::pair<std::string, uint16_t>, Ptr<Socket>>(dst, new_sock));
+                new_sock->SetAllowBroadcast (true);
+                new_sock->SetRecvCallback (onReceive);
+                this->scheduleSend(*iter, new_sock, iter->ts);
+        ...
+    } 
+    new_sock将自身的RecvCallback类赋值为onReceive，也就是handleRead（）。
+    6）ns3自己实现了回调函数的机制
+    可以作为下一步了解ns3机制的任务，再次先不做讨论。
+    https://www.cnblogs.com/lyszyl/p/12077916.html#:~:text=NS3-%E5%9B%9E%E8%B0%83.%20NS-3%E4%B8%AD%E7%9A%84%E5%9B%9E%E8%B0%83%E5%85%B6%E5%AE%9E%E5%B0%B1%E6%98%AFC%20%E8%AF%AD%E8%A8%80%E5%9F%BA%E6%9C%AC%E7%9A%84%E5%87%BD%E6%95%B0%E6%8C%87%E9%92%88%E7%9A%84%E5%B0%81%E8%A3%85%E7%B1%BB%E3%80%82.%20%E5%9B%9E%E8%B0%83%E5%87%BD%E6%95%B0%E6%98%AF%E5%BD%93%E7%89%B9%E5%AE%9A%E4%BA%8B%E4%BB%B6%E6%88%96%E8%80%85%E6%BB%A1%E8%B6%B3%E6%9F%90%E7%A7%8D%E6%9D%A1%E4%BB%B6%E6%97%B6,%28%E6%97%B6%E9%97%B4%E8%B6%85%E6%97%B6%29%E8%A2%AB%E8%B0%83%E7%94%A8%EF%BC%8C%E7%94%A8%E4%BA%8E%E5%AF%B9%E8%AF%A5%E4%BA%8B%E4%BB%B6%E6%88%96%E8%80%85%E6%9D%A1%E4%BB%B6%E8%BF%9B%E8%A1%8C%E5%93%8D%E5%BA%94%EF%BC%8C%E6%98%AF%E4%B8%80%E7%A7%8D%E5%8F%AF%E6%89%A9%E5%B1%95%E7%BC%96%E7%A8%8B%E7%9A%84%E5%B8%B8%E7%94%A8%E6%89%8B%E6%AE%B5%E3%80%82.%20%E5%9B%9E%E8%B0%83%E7%9A%84%E6%9C%80%E5%A4%A7%E5%A5%BD%E5%A4%84%E5%9C%A8%E4%BA%8E%E6%89%A9%E5%B1%95%E6%80%A7%E5%BC%BA%E3%80%82.%20%E4%B8%8D%E9%9C%80%E8%A6%81%E5%92%8C%E5%85%B7%E4%BD%93%E7%9A%84%E5%87%BD%E6%95%B0%E8%BF%9B%E8%A1%8C%E7%BB%91%E5%AE%9A%EF%BC%8C%E8%80%8C%E5%8F%AF%E4%BB%A5%E5%9C%A8%E5%88%9B%E5%BB%BA%E7%9A%84%E6%97%B6%E5%80%99%E5%8A%A8%E6%80%81%E5%86%B3%E5%AE%9A%E5%88%B0%E5%BA%95%E8%B0%83%E7%94%A8%E9%82%A3%E4%B8%AA%E5%87%BD%E6%95%B0%E3%80%82.%20%E4%BE%8B%E5%A6%82%EF%BC%8C%E6%AD%A4%E6%97%B6%E6%88%91%E4%BB%AC%E4%B8%8D%E6%83%B3%E5%86%8D%E8%B0%83%E7%94%A8%E5%8A%A0%E6%B3%95%EF%BC%8C%E8%80%8C%E6%83%B3%E8%B0%83%E7%94%A8%E4%B9%98%E6%B3%95%EF%BC%8C%E9%82%A3%E4%B9%88%E5%8F%AF%E4%BB%A5%E7%BB%99A%E5%AF%B9%E8%B1%A1%E5%AE%9E%E4%BE%8B%E7%BB%91%E5%AE%9A%E4%B9%98%E6%B3%95%E6%93%8D%E4%BD%9C%EF%BC%8C%E8%80%8C%E6%97%A0%E9%9C%80%E6%94%B9%E5%8F%98A%E7%B1%BB%E7%9A%84%E5%AE%9A%E4%B9%89%E3%80%82.%20NS3%E4%B8%AD%E4%BD%BF%E7%94%A8%E5%9B%9E%E8%B0%83%E6%80%9D%E6%83%B3%E6%9D%A5%E5%A4%84%E7%90%86%E5%90%84%E7%A7%8D%E5%8D%8F%E8%AE%AE%E8%B0%83%E7%94%A8%E6%88%96%E8%80%85%E8%BF%BD%E8%B8%AA%E7%B3%BB%E7%BB%9F%E3%80%82.
 -----
     3.application子类deviceSlave的启动
+    case 6: //slave
+    {
+        ip = j["deviceInfo"][i]["ip"].dump();
+        ip.erase(0,1);
+        ip.erase(ip.length()-1,1);
+        DeviceSlaveHelper slave(Ipv4AddressValue(ip.data()));
+        slaveApp = slave.Install (Nodes.Get (i));
+        slaveApp.Start(Seconds (0.0));
+        std::cout << "Node " << i << " is slave" <<std::endl;
+    }
+    这些和deviceMaster差不多，没什么好说的。知道deviceSlave::StartApplication()
+    --> device-slave.cc
+    
+    
 ```
-
+    
 > 回调函数和hook函数的区别
 
 |回调函数|钩子函数|
