@@ -393,6 +393,8 @@ runDT
       m_newConnectionCreated = newConnectionCreated; 
     } 
     下位机要与上位机建立联结，需要有connectionRequest（链接请求）和newConnectionCreated（链接成功）两个回调函数。
+    *****关键点：上下位机如何实现链接的？
+    
 ```
     
 > 回调函数和hook函数的区别
