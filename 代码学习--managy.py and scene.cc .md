@@ -309,8 +309,90 @@ runDT
     }
     这些和deviceMaster差不多，没什么好说的。知道deviceSlave::StartApplication()
     --> device-slave.cc
+    /**
+    * \brief Handle a packet reception.
+    *
+    * This function is called by lower layers.
+    *
+    * \param socket the socket the packet was received to.
+     */
+    void HandleRead (Ptr<Socket> socket);
+
+   uint16_t m_port; //!< Port on which we listen for incoming packets.
+   
+   std::set<uint16_t> port_list; //list of port of services
+   std::vector<Ptr<Socket>> m_socket; //!< IPv4 Sockets
+   Ipv4Address localAddress;
+   NetManager net;//!< net manager
     
+    deviceSlave的一些函数和变量，注意到，deviceSlave比deviceMaster多了一个套接字向量m_socket
     
+    StartApplication()的过程很简单：从ins.json中读指令，当指令的dst和节点的localAddress相同时
+    std::set<uint16_t>::iterator p = port_list.find(dport);
+    if (p == port_list.end())
+        std::cout << "adding port :" << dport << std::endl;
+    port_list.insert(dport);
+    如果port.list没找到dport，将dport插入port_list。
+    if (m_socket.size() == 0 && port_list.size() != 0)//这一步判断还不太懂没什么这么做？为什么要一个socket都没有的时候才创建？不应该socket和port数量相同吗？
+    {
+      for (std::set<uint16_t>::iterator i = port_list.begin(); i != port_list.end(); i++)
+      {
+        uint16_t port = *i;
+        // std::cout<<"openning service at port :"<<port<<std::endl;
+        Ptr<Socket> socket = net.startListen(GetNode(), port, MakeCallback(&DeviceSlave::ConnectionRequestCallback, this),
+                                             MakeCallback(&DeviceSlave::NewConnectionCreatedCallback, this),
+                                             MakeCallback(&DeviceSlave::HandleRead, this));
+        m_socket.push_back(socket);
+      }
+      // std::cout<<"openning service complete"<<std::endl;
+    }
+    当没有套接字而有端口号时（也就是有接收信息需求没有服务时），遍历端口列表，为每一个port调用net.startListen()创建套接字，并压入m_socket。
+    --> net-manager.cc
+    // 监听结点，设置Listen、SetRecvCallback、SetAcceptCallback
+    Ptr<Socket>
+    NetManager::startListen (Ptr<Node> node, uint16_t port, Callback<bool, Ptr<Socket>, const Address&> onConnect,
+                               Callback<void, Ptr<Socket>, const Address&> onConnectCreate, Callback<void, Ptr<Socket>> onReceive)
+    {       
+        NS_LOG_FUNCTION (this);
+        TypeId tid = TypeId::LookupByName("ns3::TcpSocketFactory");
+        Ptr<Socket> socket = Socket::CreateSocket(node, tid);
+        InetSocketAddress local = InetSocketAddress(Ipv4Address::GetAny(), port);     //local address
+        if (socket->Bind(local) == -1)
+        {
+            NS_FATAL_ERROR("Failed to bind socket");
+        }                                    
+        socket->Listen();
+        // Notify application when new data is available to be read.
+        socket->SetRecvCallback(onReceive);
+        // Accept connection requests from remote hosts.
+        socket->SetAcceptCallback(onConnect, onConnectCreate);                                                                                                                              
+        return socket;
+    }        
+    startListen（）干了几件事：创建套接字，将套接字和地址绑定，开始监听，设置了两个回调函数。
+    首先来说，创建socket有几个重要的信息需要知道：套接字类型--TypeID,节点，地址--local 
+--
+    下位机和上位机的功能不同，导致二者socket的动作也不一样。上位机处于主动地位，只需要发指令+等下位机回复。下位机就需要一直监听，接收消息，回复，执行。
+    而很多动作都依赖于回调函数。
+--
+    -->socket.cc
+    * \brief Listen for incoming connections.
+   * \returns 0 on success, -1 on error (in which case errno is set).
+   */
+    virtual int Listen (void) = 0;
+    Listen（）就是socket开始监听。
+    socket->SetRecvCallback(onReceive);
+    和deviceMaster差不多。
+    socket->SetAcceptCallback(onConnect, onConnectCreate);
+    void 
+    Socket::SetAcceptCallback (
+      Callback<bool, Ptr<Socket>, const Address &> connectionRequest,
+      Callback<void, Ptr<Socket>, const Address&> newConnectionCreated)      
+    { 
+      NS_LOG_FUNCTION (this << &connectionRequest << &newConnectionCreated);
+      m_connectionRequest = connectionRequest;
+      m_newConnectionCreated = newConnectionCreated; 
+    } 
+    下位机要与上位机建立联结，需要有connectionRequest（链接请求）和newConnectionCreated（链接成功）两个回调函数。
 ```
     
 > 回调函数和hook函数的区别
