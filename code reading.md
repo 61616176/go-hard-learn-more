@@ -13,3 +13,5 @@ https://coderscat.com/learn-from-source-code/
 10. read,write,read more,write more 保持写代码的习惯。可以自己推进一个小项目，不用现在就开始刷算法题。
 
 > 小项目去找一个想法
+
+先写一个抓包的程序，用libpcap
